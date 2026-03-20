@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from src.config.mongo import connect_db, close_db
 from src.config.settings import settings
+from src.routes import customer, product, order_final, order_item
 
 
 @asynccontextmanager
@@ -30,6 +31,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Incluir todos los routers
+app.include_router(customer.router)
+app.include_router(product.router)
+app.include_router(order_final.router)
+app.include_router(order_item.router)
+
 
 @app.get("/")
 async def root():
@@ -39,3 +46,7 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+
+

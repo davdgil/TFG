@@ -13,7 +13,7 @@ class UserRole(str, Enum):
 class User(BaseModel):
 	user_id: str = Field(min_length=1)
 	username: str = Field(min_length=1)
-	email: EmailStr
+	email: EmailStr  # Restaurado EmailStr con validación de email
 	password_hash: str = Field(min_length=1)
 	role: UserRole
 	created_at: datetime
