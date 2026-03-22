@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Chatbot API",
+    title="API",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -25,13 +25,13 @@ app = FastAPI(
 # CORS para frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Cambiar en producción
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Incluir todos los routers
+
 app.include_router(customer.router)
 app.include_router(product.router)
 app.include_router(order_final.router)
@@ -40,12 +40,10 @@ app.include_router(order_item.router)
 
 @app.get("/")
 async def root():
-    return {"message": "Chatbot API running"}
+    return {"message": "API running"}
 
 
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+
 
 
 
