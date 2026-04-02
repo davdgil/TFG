@@ -1,17 +1,21 @@
 # FastAPI y servidor
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
 
 # Base de datos MongoDB
-motor==3.3.2
-pymongo==4.6.0
+motor>=3.3.0
+pymongo>=4.6.0
 
 # Modelos y validación
-pydantic==2.5.2
-pydantic[email]==2.5.2
+pydantic>=2.5.0
+pydantic[email]==2.5.0
+pydantic-settings>=2.0.0
 
 # Variables de entorno
-python-dotenv==1.0.0
+python-dotenv>=1.0.0
 
 # Análisis de datos 
-pandas==2.1.4
+pandas>=2.1.0
+
+# SDK de MCP para Python
+mcp[cli]
