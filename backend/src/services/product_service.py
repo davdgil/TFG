@@ -25,10 +25,10 @@ class ProductService:
            raise HTTPException(status_code=500, detail="Error interno del servidor")
 
    @staticmethod
-   async def get_products(limit: int = 10):
+   async def get_products():
        """Obtiene una lista simple de products"""
        try:
-           products = await db.products.find({}, {"_id": 0}).limit(limit).to_list(length=None)
+           products = await db.products.find({}, {"_id": 0}).to_list(length=None)
 
            return [Product(**product) for product in products]
 
