@@ -1,3 +1,4 @@
+
 from ..config.mongo import db
 from ..models.product import Product
 from fastapi import HTTPException

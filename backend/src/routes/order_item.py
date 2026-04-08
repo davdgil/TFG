@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from typing import List
 
 from ..models.order_item import OrderItem
-from ..services.order_item_service import OrderItemService
+
 
 router = APIRouter(
     prefix="/order-items",

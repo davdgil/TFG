@@ -4,15 +4,21 @@ from contextlib import asynccontextmanager
 
 from src.config.mongo import connect_db, close_db
 from src.config.settings import settings
-from src.routes import customer, product, order_final, order_item
+from src.routes import customer, product, order_final, order_item, chat
+from src.mcp.client import MCPClient
+
+mcp_client = MCPClient()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: conectar a MongoDB
     await connect_db()
+    await mcp_client.connect_to_server("src/mcp/server.py")
+    app.state.mcp_client = mcp_client
     yield
     # Shutdown: cerrar conexión
+    await mcp_client.cleanup()
     await close_db()
 
 
@@ -36,6 +42,7 @@ app.include_router(customer.router)
 app.include_router(product.router)
 app.include_router(order_final.router)
 app.include_router(order_item.router)
+app.include_router(chat.router)
 
 
 @app.get("/")
