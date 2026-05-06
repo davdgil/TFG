@@ -11,7 +11,7 @@ class ChatRequest(BaseModel):
 @router.post("/chat")
 async def chat(body: ChatRequest, request: Request):
     try:
-        print("Entró en /chat")
+        print("Entro en /chat")
         print("Mensaje:", body.message)
 
         mcp_client = request.app.state.mcp_client
@@ -20,7 +20,15 @@ async def chat(body: ChatRequest, request: Request):
         response = await mcp_client.process_query(body.message)
         print("Respuesta generada:", response)
 
-        return {"message": response}
+        if isinstance(response, dict):
+            return response
+
+        return {
+            "message": response,
+            "kpis": {},
+            "table": [],
+            "chart": None,
+        }
     except Exception as e:
         print("ERROR EN /chat:", repr(e))
         raise HTTPException(status_code=500, detail=str(e))

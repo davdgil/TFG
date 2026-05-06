@@ -1,7 +1,9 @@
-from fastapi import APIRouter
 from typing import List
 
+from fastapi import APIRouter
+
 from ..models.product import Product
+from ..services.product_service import ProductService
 
 
 router = APIRouter(
@@ -20,6 +22,6 @@ async def get_products(limit: int = 10):
 
 @router.get("/{product_id}", response_model=Product)
 async def get_product_by_id(product_id: str):
-    """Obtiene un producto específico por su ID"""
+    """Obtiene un producto especifico por su ID"""
     product = await ProductService.get_productById(product_id)
     return Product(**product)

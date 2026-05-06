@@ -26,10 +26,10 @@ class OrderItemService:
            raise HTTPException(status_code=500, detail="Error interno del servidor")
 
    @staticmethod
-   async def get_order_items():
+   async def get_order_items(limit: int = 10):
        """Obtiene una lista simple de order items"""
        try:
-           order_items = await db.order_items.find({}, {"_id": 0}).to_list(length=None)
+           order_items = await db.order_items.find({}, {"_id": 0}).limit(limit).to_list(length=None)
 
            return [OrderItem(**item) for item in order_items]
 

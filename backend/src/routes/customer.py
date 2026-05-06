@@ -1,8 +1,10 @@
-from fastapi import APIRouter
 from typing import List
+
+from fastapi import APIRouter
 
 from ..models.customer import Customer
 from ..services.customer_service import CustomerService
+
 
 router = APIRouter(
     prefix="/customers",
@@ -20,6 +22,6 @@ async def get_customers(limit: int = 10):
 
 @router.get("/{customer_id}", response_model=Customer)
 async def get_customer_by_id(customer_id: str):
-    """Obtiene un cliente específico por su ID"""
-    customer = await CustomerService.get_customerById(customer_id)
+    """Obtiene un cliente especifico por su ID"""
+    customer = await CustomerService.get_customer_by_id(customer_id)
     return Customer(**customer)

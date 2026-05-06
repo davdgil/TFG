@@ -4,10 +4,15 @@ import React, { useState } from "react";
 import "./ChatPanel.css";
 
 const suggestions = [
-  "Muéstrame las categorías disponibles",
+  "Muestrame las categorias disponibles",
   "Top ventas de productos vendidos en 2017",
   "Ventas por estado",
-  "Dame estadísticas de la base de datos",
+  "Ventas mensuales en 2018",
+  "Ventas por categoria",
+  "Top clientes por ventas",
+  "Ticket medio por anio",
+  "Coste de envio por estado",
+  "Dame estadisticas de la base de datos",
 ];
 
 function ChatPanel({ messages, onSendMessage }) {
@@ -53,7 +58,7 @@ function ChatPanel({ messages, onSendMessage }) {
                   : "chat-panel__message--assistant"
               }`}
             >
-              <strong>{msg.role === "user" ? "Tú" : "Asistente"}:</strong>
+              <strong>{msg.role === "user" ? "Tu" : "Asistente"}:</strong>
               <div className="chat-panel__message-text">{msg.content}</div>
             </div>
           ))}

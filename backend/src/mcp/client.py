@@ -3,6 +3,7 @@ import json
 import os
 from contextlib import AsyncExitStack
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -12,6 +13,18 @@ from mcp.client.stdio import stdio_client
 load_dotenv()
 
 OPENAI_MODEL = "gpt-5.4-mini"
+
+CHAT_INSTRUCTIONS = """
+Eres un asistente analitico para un dashboard de e-commerce.
+Cuando el usuario pida graficos, tablas, KPIs, ventas, pedidos, clientes,
+productos, categorias, ciudades, estados, envios o tickets medios, debes elegir
+la herramienta MCP mas adecuada.
+
+Las herramientas analiticas ya devuelven un objeto listo para la interfaz con:
+message, kpis, table y chart. No inventes datos.
+Si una herramienta analitica devuelve ese objeto, usalo como resultado final.
+Para preguntas no analiticas, responde con texto breve.
+"""
 
 
 class MCPClient:
@@ -94,7 +107,42 @@ class MCPClient:
 
         return openai_tools
 
-    async def process_query(self, query: str) -> str:
+    def _tool_content_to_text(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                text = getattr(item, "text", None)
+                if text is not None:
+                    parts.append(text)
+                else:
+                    parts.append(str(item))
+            return "\n".join(parts)
+
+        return str(content)
+
+    def _parse_json_object(self, text: str) -> dict[str, Any] | None:
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+
+        if isinstance(parsed, dict):
+            return parsed
+        return None
+
+    def _is_frontend_result(self, value: Any) -> bool:
+        return (
+            isinstance(value, dict)
+            and "message" in value
+            and "kpis" in value
+            and "table" in value
+            and "chart" in value
+        )
+
+    async def process_query(self, query: str) -> str | dict[str, Any]:
         if not self.session:
             raise RuntimeError("MCP session is not initialized")
 
@@ -112,6 +160,7 @@ class MCPClient:
             response = await self.openai.responses.create(
                 model=OPENAI_MODEL,
                 input=input_items,
+                instructions=CHAT_INSTRUCTIONS,
                 tools=available_tools,
             )
 
@@ -121,7 +170,11 @@ class MCPClient:
             ]
 
             if not function_calls:
-                return (response.output_text or "").strip()
+                output_text = (response.output_text or "").strip()
+                parsed_output = self._parse_json_object(output_text)
+                if self._is_frontend_result(parsed_output):
+                    return parsed_output
+                return output_text
 
             # Guardamos la salida del modelo para el siguiente turno
             input_items.extend(response.output)
@@ -135,15 +188,20 @@ class MCPClient:
                     tool_args = {}
 
                 result = await self.session.call_tool(tool_name, tool_args)
+                tool_output = self._tool_content_to_text(result.content)
+                parsed_tool_output = self._parse_json_object(tool_output)
 
                 print(f"\n[Tool call] {tool_name}({tool_args})")
                 print(f"[Tool result] {result.content}\n")
+
+                if self._is_frontend_result(parsed_tool_output):
+                    return parsed_tool_output
 
                 input_items.append(
                     {
                         "type": "function_call_output",
                         "call_id": tool_call.call_id,
-                        "output": json.dumps(result.content, ensure_ascii=False, default=str),
+                        "output": tool_output,
                     }
                 )
 

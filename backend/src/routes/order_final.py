@@ -1,7 +1,9 @@
-from fastapi import APIRouter
 from typing import List
 
+from fastapi import APIRouter
+
 from ..models.order_final import OrderFinal
+from ..services.order_final_service import OrderFinalService
 
 
 router = APIRouter(
@@ -20,6 +22,6 @@ async def get_orders(limit: int = 10):
 
 @router.get("/{order_id}", response_model=OrderFinal)
 async def get_order_by_id(order_id: str):
-    """Obtiene un pedido específico por su ID"""
+    """Obtiene un pedido especifico por su ID"""
     order = await OrderFinalService.get_orderById(order_id)
     return OrderFinal(**order)

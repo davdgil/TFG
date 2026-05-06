@@ -15,7 +15,7 @@ from src.mcp.tools.orders import register_order_tools
 from src.mcp.tools.products import register_product_tools
 from src.mcp.tools.analytics import register_analytics_tools
 
-# Configure logging to stderr (not stdout) 
+ 
 logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
 
 def main():

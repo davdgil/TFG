@@ -1,7 +1,9 @@
-from fastapi import APIRouter
 from typing import List
 
+from fastapi import APIRouter
+
 from ..models.order_item import OrderItem
+from ..services.order_item_service import OrderItemService
 
 
 router = APIRouter(
@@ -20,6 +22,6 @@ async def get_order_items(limit: int = 10):
 
 @router.get("/{order_id}", response_model=List[OrderItem])
 async def get_order_items_by_order_id(order_id: str):
-    """Obtiene los items de un pedido específico"""
+    """Obtiene los items de un pedido especifico"""
     order_items = await OrderItemService.get_order_itemsByOrderId(order_id)
     return order_items
