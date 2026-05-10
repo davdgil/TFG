@@ -29,6 +29,14 @@ async def chat(body: ChatRequest, request: Request):
             "table": [],
             "chart": None,
         }
+    except RuntimeError as e:
+        print("ERROR CONTROLADO EN /chat:", repr(e))
+        return {
+            "message": str(e),
+            "kpis": {},
+            "table": [],
+            "chart": None,
+        }
     except Exception as e:
         print("ERROR EN /chat:", repr(e))
         raise HTTPException(status_code=500, detail=str(e))

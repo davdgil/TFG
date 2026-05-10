@@ -1,41 +1,38 @@
 from typing import Any
+
 from src.config.mongo import db
+from src.services.analytics_service import AnalyticsService
+
 
 def register_order_tools(mcp):
-    """Registra las herramientas de pedidos en el servidor MCP"""
-    
+    """Registra herramientas de pedidos alineadas con el esquema actual."""
+
     @mcp.tool()
     async def get_order_by_id(order_id: str) -> dict[str, Any]:
-        """Obtiene un pedido por su ID"""
+        """Obtiene un pedido por su ID."""
         order = await db.orders_final.find_one({"order_id": order_id}, {"_id": 0})
         if not order:
             return {"error": "Order not found"}
         return order
 
     @mcp.tool()
-    async def get_orders_by_customer(customer_id: str) -> list[dict]:
-        """Obtiene todos los pedidos de un cliente específico"""
+    async def get_orders_by_customer(customer_id: str, limit: int | None = 20) -> list[dict[str, Any]]:
+        """Obtiene pedidos de un cliente."""
+        safe_limit = AnalyticsService.clean_limit(limit)
         orders = await db.orders_final.find(
-            {"customer_id": customer_id}, 
-            {"_id": 0}
-        ).to_list(length=None)
+            {"customer_id": customer_id},
+            {"_id": 0},
+        ).limit(safe_limit).to_list(length=safe_limit)
         return orders
 
     @mcp.tool()
-    async def get_all_orders() -> list[dict]:
-        """Obtiene todos los pedidos"""
-        orders = await db.orders_final.find(
-            {}, 
-            {"_id": 0}
-        ).to_list(length=None)
+    async def get_all_orders(limit: int | None = 20) -> list[dict[str, Any]]:
+        """Obtiene una muestra limitada de pedidos."""
+        safe_limit = AnalyticsService.clean_limit(limit)
+        orders = await db.orders_final.find({}, {"_id": 0}).limit(safe_limit).to_list(length=safe_limit)
         return orders
 
     @mcp.tool()
-    async def count_orders_by_status() -> list[dict]:
-        """Cuenta los pedidos agrupados por estado"""
-        pipeline = [
-            {"$group": {"_id": "$order_status", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
-        ]
-        result = await db.orders_final.aggregate(pipeline).to_list(length=None)
-        return [{"status": r["_id"], "count": r["count"]} for r in result]
+    async def count_orders_by_year() -> dict[str, Any]:
+        """Grafico del numero de pedidos por anio."""
+        return await AnalyticsService.orders_by_year()

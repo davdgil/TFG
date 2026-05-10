@@ -6,6 +6,8 @@ import ChatPanel from "./components/ChatPanel";
 import ResultsPanel from "./components/ResultsPanel";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const REQUEST_TIMEOUT_MS = 25000;
+const LOADING_MESSAGE = "Estoy analizando la consulta...";
 
 export default function Page() {
   const [messages, setMessages] = useState([
@@ -22,12 +24,23 @@ export default function Page() {
     table: [],
     chart: null,
   });
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSendMessage = async (input) => {
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
-    const newMessages = [...messages, { role: "user", content: input }];
-    setMessages(newMessages);
+    const userMessage = { role: "user", content: input };
+    const loadingMessage = {
+      role: "assistant",
+      content: LOADING_MESSAGE,
+      loading: true,
+    };
+    const pendingMessages = [...messages, userMessage, loadingMessage];
+    setMessages(pendingMessages);
+    setIsLoading(true);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
       const res = await fetch(`${API_URL}/chat`, {
@@ -36,17 +49,21 @@ export default function Page() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ message: input }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
-        throw new Error(`Backend error: ${res.status}`);
+        const errorBody = await res.json().catch(() => null);
+        const detail = errorBody?.detail || `Backend error: ${res.status}`;
+        throw new Error(detail);
       }
 
       const apiResponse = await res.json();
-      const assistantMessage = apiResponse.message || "Sin respuesta";
+      const assistantMessage = apiResponse.message || "No se ha podido generar una respuesta.";
 
       setMessages([
-        ...newMessages,
+        ...messages,
+        userMessage,
         {
           role: "assistant",
           content: assistantMessage,
@@ -60,10 +77,14 @@ export default function Page() {
         chart: apiResponse.chart || null,
       });
     } catch (error) {
-      const errorMessage = "Hubo un error al conectar con el backend.";
+      const errorMessage =
+        error?.name === "AbortError"
+          ? "La consulta ha tardado demasiado y se ha cancelado. Prueba con una consulta mas concreta."
+          : error?.message || "No se ha podido completar la consulta en este momento.";
 
       setMessages([
-        ...newMessages,
+        ...messages,
+        userMessage,
         {
           role: "assistant",
           content: errorMessage,
@@ -76,6 +97,9 @@ export default function Page() {
         table: [],
         chart: null,
       });
+    } finally {
+      clearTimeout(timeoutId);
+      setIsLoading(false);
     }
   };
 
@@ -90,7 +114,11 @@ export default function Page() {
 
       <main className="page-main">
         <aside className="page-sidebar">
-          <ChatPanel messages={messages} onSendMessage={handleSendMessage} />
+          <ChatPanel
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            isLoading={isLoading}
+          />
         </aside>
 
         <section className="page-results">

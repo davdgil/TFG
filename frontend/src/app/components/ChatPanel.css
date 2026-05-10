@@ -49,6 +49,17 @@
   border-color: #3a3a3a;
 }
 
+.chat-panel__suggestion-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.chat-panel__status {
+  padding: 10px 16px 0;
+  font-size: 12px;
+  color: #93c5fd;
+}
+
 .chat-panel__messages {
   flex: 1;
   overflow-y: auto;
@@ -59,11 +70,11 @@
 }
 
 .chat-panel__message {
-  max-width: 88%;
-  padding: 12px 14px;
+  width: min(92%, 540px);
+  padding: 12px 14px 13px;
   border-radius: 14px;
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 1.55;
 }
 
 .chat-panel__message--user {
@@ -79,8 +90,46 @@
   border: 1px solid #2b2b2b;
 }
 
+.chat-panel__message--loading {
+  border-color: #2f4f8f;
+}
+
+.chat-panel__message-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.78;
+}
+
 .chat-panel__message-text {
-  margin-top: 6px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.chat-panel__message-paragraph {
+  margin: 0;
+}
+
+.chat-panel__message-strong {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.chat-panel__message-bullet {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.chat-panel__message-bullet-mark {
+  color: #93c5fd;
+  line-height: 1.45;
 }
 
 .chat-panel__form {
@@ -119,4 +168,10 @@
 
 .chat-panel__button:hover {
   background: #1d4ed8;
+}
+
+.chat-panel__input:disabled,
+.chat-panel__button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
