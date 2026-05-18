@@ -45,6 +45,22 @@ No inventes datos.
 
 
 class MCPClient:
+    MONTH_NAME_TO_NUMBER = {
+        "enero": 1,
+        "febrero": 2,
+        "marzo": 3,
+        "abril": 4,
+        "mayo": 5,
+        "junio": 6,
+        "julio": 7,
+        "agosto": 8,
+        "septiembre": 9,
+        "setiembre": 9,
+        "octubre": 10,
+        "noviembre": 11,
+        "diciembre": 12,
+    }
+
     def __init__(self):
         self.session: ClientSession | None = None
         self.exit_stack = AsyncExitStack()
@@ -138,6 +154,29 @@ class MCPClient:
             return None
         return int(match.group(1))
 
+    def extract_month(self, text: str) -> int | None:
+        named_month = next(
+            (number for name, number in self.MONTH_NAME_TO_NUMBER.items() if name in text),
+            None,
+        )
+        if named_month is not None:
+            return named_month
+
+        match = re.search(r"\bmes\s*(\d{1,2})\b", text)
+        if not match:
+            match = re.search(r"\b(0?[1-9]|1[0-2])/(20\d{2})\b", text)
+            if match:
+                return int(match.group(1))
+
+        if not match:
+            match = re.search(r"\b(0?[1-9]|1[0-2])\b", text)
+            if match:
+                month = int(match.group(1))
+                if 1 <= month <= 12:
+                    return month
+
+        return int(match.group(1)) if match else None
+
     def extract_hex_identifier(self, text: str) -> str | None:
         match = re.search(r"\b[a-f0-9]{32}\b", text)
         return match.group(0) if match else None
@@ -158,12 +197,16 @@ class MCPClient:
         if any(word in text for word in ["que puedes hacer", "ayuda", "hola", "buenas"]):
             return None
 
-        if "cliente aleatorio" in text or "usuario aleatorio" in text:
+        if any(term in text for term in ["cliente aleatorio", "usuario aleatorio", "consumidor aleatorio", "comprador aleatorio"]):
             if any(word in text for word in ["analiza", "estadistica", "resumen", "ventas", "pedidos", "compras", "facturacion"]):
                 return ["get_random_customer_summary"]
             return ["get_random_customer"]
 
-        if entity_id and ("cliente" in text or "usuario" in text):
+        if entity_id and any(term in text for term in ["cliente", "usuario", "consumidor", "comprador", "consumer"]):
+            if ("dia" in text or "dias" in text) and self.extract_year(text) is not None and self.extract_month(text) is not None:
+                return ["customer_sales_by_day"]
+            if any(word in text for word in ["mes", "mensual", "meses"]) and any(word in text for word in ["ventas", "compras", "facturacion", "evolucion", "historial"]):
+                return ["customer_sales_by_month"]
             if any(word in text for word in ["analiza", "estadistica", "resumen", "ventas", "pedidos", "compras", "facturacion"]):
                 return ["get_customer_summary"]
             return ["get_customer_by_id", "get_customer_by_unique_id", "get_customer_summary"]
@@ -180,10 +223,13 @@ class MCPClient:
         if "ticket" in text or "promedio" in text:
             return ["average_order_value_by_year"]
 
-        if "cliente" in text or "usuario" in text:
+        if any(term in text for term in ["cliente", "usuario", "consumidor", "comprador", "consumer"]):
             if any(word in text for word in ["resumen", "estadistica", "analiza", "compras", "pedidos", "facturacion"]):
                 return ["top_customers", "get_random_customer_summary"]
             return ["top_customers"]
+
+        if ("dia" in text or "dias" in text) and self.extract_year(text) is not None and self.extract_month(text) is not None:
+            return ["sales_by_day"]
 
         if "ciudad" in text:
             return ["sales_by_city"]
@@ -192,6 +238,10 @@ class MCPClient:
             return ["sales_by_state"]
 
         if "mensual" in text or "mes" in text:
+            if "dia" in text or "dias" in text:
+                return ["sales_by_day"]
+            if any(signal in text for signal in ["estacionalidad", "por mes del año", "por mes del ano", "reparto mensual", "distribucion mensual"]):
+                return ["sales_seasonality"]
             return ["sales_by_month"]
 
         if "pedido" in text and ("anio" in text or "ano" in text or "evolucion" in text):
@@ -211,6 +261,8 @@ class MCPClient:
             return ["database_stats"]
 
         if "ventas" in text or "facturacion" in text:
+            if any(signal in text for signal in ["estacionalidad", "por mes del año", "por mes del ano", "reparto mensual", "distribucion mensual"]):
+                return ["sales_seasonality"]
             return ["sales_by_year", "sales_by_month", "sales_by_category", "sales_by_state", "sales_by_city", "top_products"]
 
         return None
@@ -255,6 +307,7 @@ class MCPClient:
             "mas vendido",
             "mas vendidos",
             "mensual",
+            "estacionalidad",
             "anual",
             "por estado",
             "por ciudad",
@@ -302,11 +355,15 @@ class MCPClient:
     def build_fallback_tool_args(self, tool_name: str, query: str) -> dict[str, Any]:
         text = self.normalize_text(query)
         year = self.extract_year(text)
+        month = self.extract_month(text)
         limit = self.extract_limit(text)
         entity_id = self.extract_hex_identifier(text)
         args: dict[str, Any] = {}
 
         if year is not None and tool_name in {
+            "customer_sales_by_day",
+            "customer_sales_by_month",
+            "sales_by_day",
             "sales_by_month",
             "sales_by_category",
             "units_by_category",
@@ -317,6 +374,9 @@ class MCPClient:
             "freight_by_category",
         }:
             args["year"] = year
+
+        if month is not None and tool_name in {"sales_by_day", "customer_sales_by_day"}:
+            args["month"] = month
 
         if limit is not None and tool_name in {
             "product_count_by_category",
@@ -342,6 +402,12 @@ class MCPClient:
             args["customer_unique_id"] = entity_id
 
         if entity_id is not None and tool_name == "get_customer_summary":
+            args["customer_ref"] = entity_id
+
+        if entity_id is not None and tool_name == "customer_sales_by_month":
+            args["customer_ref"] = entity_id
+
+        if entity_id is not None and tool_name == "customer_sales_by_day":
             args["customer_ref"] = entity_id
 
         return args

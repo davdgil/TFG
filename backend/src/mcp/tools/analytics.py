@@ -1,4 +1,4 @@
-from typing import Any
+﻿from typing import Any
 
 from src.services.analytics_service import AnalyticsService
 
@@ -18,17 +18,27 @@ def register_analytics_tools(mcp):
 
     @mcp.tool()
     async def sales_by_year() -> dict[str, Any]:
-        """Grafico de ventas agregadas por anio usando todos los pedidos."""
+        """Grafico de ventas agregadas por año usando todos los pedidos."""
         return await AnalyticsService.sales_by_year()
 
     @mcp.tool()
     async def sales_by_month(year: int | None = None) -> dict[str, Any]:
-        """Grafico de ventas por mes. Puede filtrarse por anio."""
+        """Grafico de ventas por mes. Puede filtrarse por año."""
         return await AnalyticsService.sales_by_month(year=year)
 
     @mcp.tool()
+    async def sales_seasonality() -> dict[str, Any]:
+        """Grafico de estacionalidad mensual agregando todos los años del historico."""
+        return await AnalyticsService.sales_seasonality()
+
+    @mcp.tool()
+    async def sales_by_day(year: int, month: int) -> dict[str, Any]:
+        """Grafico de ventas por dia dentro de un mes y año concretos."""
+        return await AnalyticsService.sales_by_day(year=year, month=month)
+
+    @mcp.tool()
     async def sales_by_category(year: int | None = None, limit: int | None = None) -> dict[str, Any]:
-        """Grafico de ventas por categoria. Puede filtrarse por anio."""
+        """Grafico de ventas por categoria. Puede filtrarse por año."""
         return await AnalyticsService.sales_by_category(year=year, limit=limit)
 
     @mcp.tool()
@@ -38,17 +48,17 @@ def register_analytics_tools(mcp):
 
     @mcp.tool()
     async def top_products(year: int | None = None, limit: int | None = None) -> dict[str, Any]:
-        """Grafico de productos con mas ventas. Puede filtrarse por anio."""
+        """Grafico de productos con mas ventas. Puede filtrarse por año."""
         return await AnalyticsService.top_products(year=year, limit=limit)
 
     @mcp.tool()
     async def sales_by_state(year: int | None = None, limit: int | None = None) -> dict[str, Any]:
-        """Grafico de ventas por estado. Puede filtrarse por anio."""
+        """Grafico de ventas por estado. Puede filtrarse por año."""
         return await AnalyticsService.sales_by_state(year=year, limit=limit)
 
     @mcp.tool()
     async def sales_by_city(year: int | None = None, limit: int | None = None) -> dict[str, Any]:
-        """Grafico de ventas por ciudad. Puede filtrarse por anio."""
+        """Grafico de ventas por ciudad. Puede filtrarse por año."""
         return await AnalyticsService.sales_by_city(year=year, limit=limit)
 
     @mcp.tool()
@@ -63,15 +73,16 @@ def register_analytics_tools(mcp):
 
     @mcp.tool()
     async def average_order_value_by_year() -> dict[str, Any]:
-        """Grafico de ticket medio por anio."""
+        """Grafico de ticket medio por año."""
         return await AnalyticsService.average_order_value_by_year()
 
     @mcp.tool()
     async def orders_by_year() -> dict[str, Any]:
-        """Grafico de numero de pedidos por anio."""
+        """Grafico de numero de pedidos por año."""
         return await AnalyticsService.orders_by_year()
 
     @mcp.tool()
     async def top_customers(limit: int | None = None) -> dict[str, Any]:
         """Grafico de clientes con mas ventas acumuladas."""
         return await AnalyticsService.top_customers(limit=limit)
+

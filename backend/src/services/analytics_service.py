@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -8,6 +8,20 @@ from ..config.mongo import db
 class AnalyticsService:
     DEFAULT_LIMIT = 10
     MAX_LIMIT = 100
+    MONTH_LABELS = {
+        1: "Ene",
+        2: "Feb",
+        3: "Mar",
+        4: "Abr",
+        5: "May",
+        6: "Jun",
+        7: "Jul",
+        8: "Ago",
+        9: "Sep",
+        10: "Oct",
+        11: "Nov",
+        12: "Dic",
+    }
 
     @staticmethod
     def clean_limit(limit: int | None) -> int:
@@ -63,7 +77,7 @@ class AnalyticsService:
             {
                 "$group": {
                     "_id": {
-                        "anio": {"$year": "$order_date_parsed"},
+                        "año": {"$year": "$order_date_parsed"},
                         "order_id": "$order_id",
                     },
                     "ventas": {"$sum": "$items.price"},
@@ -73,7 +87,7 @@ class AnalyticsService:
             },
             {
                 "$group": {
-                    "_id": "$_id.anio",
+                    "_id": "$_id.año",
                     "ventas": {"$sum": "$ventas"},
                     "envio": {"$sum": "$envio"},
                     "unidades": {"$sum": "$unidades"},
@@ -83,14 +97,14 @@ class AnalyticsService:
             {
                 "$project": {
                     "_id": 0,
-                    "anio": "$_id",
+                    "año": "$_id",
                     "ventas": {"$round": ["$ventas", 2]},
                     "envio": {"$round": ["$envio", 2]},
                     "unidades": 1,
                     "pedidos": 1,
                 }
             },
-            {"$sort": {"anio": 1}},
+            {"$sort": {"año": 1}},
         ]
         rows = await db.orders_final.aggregate(pipeline).to_list(length=None)
         total_orders = sum(row["pedidos"] for row in rows)
@@ -110,8 +124,8 @@ class AnalyticsService:
             "table": rows,
             "chart": {
                 "type": "line",
-                "title": "Ventas del cliente por anio",
-                "data": [{"name": str(row["anio"]), "value": row["ventas"]} for row in rows],
+                "title": "Ventas del cliente por año",
+                "data": [{"name": str(row["año"]), "value": row["ventas"]} for row in rows],
             },
         }
 
@@ -146,6 +160,161 @@ class AnalyticsService:
             }
 
         return await AnalyticsService.build_customer_summary(customers[0])
+
+    @staticmethod
+    async def customer_sales_by_month(customer_ref: str, year: int | None = None) -> dict[str, Any]:
+        customer = await AnalyticsService.resolve_customer_reference(customer_ref)
+        if not customer:
+            return {
+                "message": "No se ha encontrado ningun cliente con ese identificador.",
+                "kpis": {},
+                "table": [],
+                "chart": None,
+            }
+
+        pipeline = [
+            {"$match": {"customer_id": customer["customer_id"]}},
+            *AnalyticsService.build_orders_with_items_pipeline(year),
+            {
+                "$group": {
+                    "_id": {
+                        "año": {"$year": "$order_date_parsed"},
+                        "mes": {"$month": "$order_date_parsed"},
+                    },
+                    "ventas": {"$sum": "$items.price"},
+                    "envio": {"$sum": "$items.freight_value"},
+                    "pedidos": {"$addToSet": "$order_id"},
+                    "unidades": {"$sum": 1},
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "año": "$_id.año",
+                    "mes": "$_id.mes",
+                    "periodo": {
+                        "$concat": [
+                            {"$toString": "$_id.año"},
+                            "-",
+                            {
+                                "$cond": [
+                                    {"$lt": ["$_id.mes", 10]},
+                                    {"$concat": ["0", {"$toString": "$_id.mes"}]},
+                                    {"$toString": "$_id.mes"},
+                                ]
+                            },
+                        ]
+                    },
+                    "mes_nombre": {
+                        "$arrayElemAt": [
+                            [
+                                "",
+                                "Ene",
+                                "Feb",
+                                "Mar",
+                                "Abr",
+                                "May",
+                                "Jun",
+                                "Jul",
+                                "Ago",
+                                "Sep",
+                                "Oct",
+                                "Nov",
+                                "Dic",
+                            ],
+                            "$_id.mes",
+                        ]
+                    },
+                    "ventas": {"$round": ["$ventas", 2]},
+                    "envio": {"$round": ["$envio", 2]},
+                    "pedidos": {"$size": "$pedidos"},
+                    "unidades": 1,
+                }
+            },
+            {"$sort": {"año": 1, "mes": 1}},
+        ]
+        rows = await db.orders_final.aggregate(pipeline).to_list(length=None)
+        total_sales = sum(row["ventas"] for row in rows)
+        title_year = f" en {year}" if year else ""
+
+        return {
+            "message": f"Evolucion mensual de las compras del cliente seleccionado{title_year}.",
+            "kpis": {
+                "meses_con_actividad": len(rows),
+                "ventas_totales": AnalyticsService.format_money(total_sales),
+                "mejor_mes": max(rows, key=lambda row: row["ventas"])["periodo"] if rows else "sin datos",
+            },
+            "table": rows,
+            "chart": {
+                "type": "line",
+                "title": f"Ventas mensuales del cliente{title_year}",
+                "data": [{"name": row["periodo"], "value": row["ventas"]} for row in rows],
+            },
+        }
+
+    @staticmethod
+    async def customer_sales_by_day(customer_ref: str, year: int, month: int) -> dict[str, Any]:
+        customer = await AnalyticsService.resolve_customer_reference(customer_ref)
+        if not customer:
+            return {
+                "message": "No se ha encontrado ningun cliente con ese identificador.",
+                "kpis": {},
+                "table": [],
+                "chart": None,
+            }
+
+        pipeline = [
+            {"$match": {"customer_id": customer["customer_id"]}},
+            AnalyticsService.build_date_stage(),
+            {
+                "$match": {
+                    "$expr": {
+                        "$and": [
+                            {"$eq": [{"$year": "$order_date_parsed"}, year]},
+                            {"$eq": [{"$month": "$order_date_parsed"}, month]},
+                        ]
+                    }
+                }
+            },
+            {"$unwind": "$items"},
+            {
+                "$group": {
+                    "_id": {"$dayOfMonth": "$order_date_parsed"},
+                    "ventas": {"$sum": "$items.price"},
+                    "envio": {"$sum": "$items.freight_value"},
+                    "pedidos": {"$addToSet": "$order_id"},
+                    "unidades": {"$sum": 1},
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "dia": "$_id",
+                    "ventas": {"$round": ["$ventas", 2]},
+                    "envio": {"$round": ["$envio", 2]},
+                    "pedidos": {"$size": "$pedidos"},
+                    "unidades": 1,
+                }
+            },
+            {"$sort": {"dia": 1}},
+        ]
+        rows = await db.orders_final.aggregate(pipeline).to_list(length=None)
+        month_name = AnalyticsService.MONTH_LABELS.get(month, str(month))
+
+        return {
+            "message": f"Distribucion diaria de las compras del cliente en {month_name} de {year}.",
+            "kpis": {
+                "dias_con_actividad": len(rows),
+                "ventas_totales": AnalyticsService.format_money(sum(row["ventas"] for row in rows)),
+                "mejor_dia": max(rows, key=lambda row: row["ventas"])["dia"] if rows else "sin datos",
+            },
+            "table": rows,
+            "chart": {
+                "type": "line",
+                "title": f"Ventas diarias del cliente en {month_name} de {year}",
+                "data": [{"name": str(row["dia"]), "value": row["ventas"]} for row in rows],
+            },
+        }
 
     @staticmethod
     async def database_stats() -> dict[str, Any]:
@@ -232,14 +401,14 @@ class AnalyticsService:
             {
                 "$project": {
                     "_id": 0,
-                    "anio": "$_id",
+                    "año": "$_id",
                     "ventas": {"$round": ["$ventas", 2]},
                     "envio": {"$round": ["$envio", 2]},
                     "pedidos": {"$size": "$pedidos"},
                     "unidades": 1,
                 }
             },
-            {"$sort": {"anio": 1}},
+            {"$sort": {"año": 1}},
         ]
         rows = await db.orders_final.aggregate(pipeline).to_list(length=None)
         total_sales = sum(row["ventas"] for row in rows)
@@ -247,15 +416,15 @@ class AnalyticsService:
         return {
             "message": "Evolucion anual de las ventas del negocio a partir del historico completo de pedidos.",
             "kpis": {
-                "anios": len(rows),
+                "años": len(rows),
                 "ventas_totales": AnalyticsService.format_money(total_sales),
-                "mejor_anio": max(rows, key=lambda row: row["ventas"])["anio"] if rows else "sin datos",
+                "mejor año": max(rows, key=lambda row: row["ventas"])["año"] if rows else "sin datos",
             },
             "table": rows,
             "chart": {
                 "type": "line",
-                "title": "Ventas por anio",
-                "data": [{"name": str(row["anio"]), "value": row["ventas"]} for row in rows],
+                "title": "Ventas por año",
+                "data": [{"name": str(row["año"]), "value": row["ventas"]} for row in rows],
             },
         }
 
@@ -266,7 +435,7 @@ class AnalyticsService:
             {
                 "$group": {
                     "_id": {
-                        "anio": {"$year": "$order_date_parsed"},
+                        "año": {"$year": "$order_date_parsed"},
                         "mes": {"$month": "$order_date_parsed"},
                     },
                     "ventas": {"$sum": "$items.price"},
@@ -277,11 +446,11 @@ class AnalyticsService:
             {
                 "$project": {
                     "_id": 0,
-                    "anio": "$_id.anio",
+                    "año": "$_id.año",
                     "mes": "$_id.mes",
                     "periodo": {
                         "$concat": [
-                            {"$toString": "$_id.anio"},
+                            {"$toString": "$_id.año"},
                             "-",
                             {
                                 "$cond": [
@@ -297,7 +466,7 @@ class AnalyticsService:
                     "unidades": 1,
                 }
             },
-            {"$sort": {"anio": 1, "mes": 1}},
+            {"$sort": {"año": 1, "mes": 1}},
         ]
         rows = await db.orders_final.aggregate(pipeline).to_list(length=None)
         title_year = f" en {year}" if year else ""
@@ -314,6 +483,106 @@ class AnalyticsService:
                 "type": "line",
                 "title": f"Ventas mensuales{title_year}",
                 "data": [{"name": row["periodo"], "value": row["ventas"]} for row in rows],
+            },
+        }
+
+    @staticmethod
+    async def sales_seasonality() -> dict[str, Any]:
+        pipeline = [
+            *AnalyticsService.build_orders_with_items_pipeline(),
+            {
+                "$group": {
+                    "_id": {"$month": "$order_date_parsed"},
+                    "ventas": {"$sum": "$items.price"},
+                    "pedidos": {"$addToSet": "$order_id"},
+                    "unidades": {"$sum": 1},
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "mes": "$_id",
+                    "ventas": {"$round": ["$ventas", 2]},
+                    "pedidos": {"$size": "$pedidos"},
+                    "unidades": 1,
+                }
+            },
+            {"$sort": {"mes": 1}},
+        ]
+        rows = await db.orders_final.aggregate(pipeline).to_list(length=None)
+        total_sales = sum(row["ventas"] for row in rows)
+
+        for row in rows:
+            month_number = int(row["mes"])
+            row["mes_nombre"] = AnalyticsService.MONTH_LABELS.get(month_number, str(month_number))
+            row["peso_ventas_pct"] = round((row["ventas"] / total_sales) * 100, 2) if total_sales else 0
+
+        best_month = max(rows, key=lambda row: row["ventas"]) if rows else None
+
+        return {
+            "message": "Distribucion de las ventas por mes del año, agregando todo el historico para identificar patrones de estacionalidad.",
+            "kpis": {
+                "meses_analizados": len(rows),
+                "mes_con_mas_ventas": best_month["mes_nombre"] if best_month else "sin datos",
+                "peso_mes_top": f'{best_month["peso_ventas_pct"]:.2f}%' if best_month else "0,00%",
+            },
+            "table": rows,
+            "chart": {
+                "type": "bar",
+                "title": "Estacionalidad mensual de ventas",
+                "data": [{"name": row["mes_nombre"], "value": row["ventas"]} for row in rows],
+            },
+        }
+
+    @staticmethod
+    async def sales_by_day(year: int, month: int) -> dict[str, Any]:
+        pipeline = [
+            AnalyticsService.build_date_stage(),
+            {
+                "$match": {
+                    "$expr": {
+                        "$and": [
+                            {"$eq": [{"$year": "$order_date_parsed"}, year]},
+                            {"$eq": [{"$month": "$order_date_parsed"}, month]},
+                        ]
+                    }
+                }
+            },
+            {"$unwind": "$items"},
+            {
+                "$group": {
+                    "_id": {"$dayOfMonth": "$order_date_parsed"},
+                    "ventas": {"$sum": "$items.price"},
+                    "pedidos": {"$addToSet": "$order_id"},
+                    "unidades": {"$sum": 1},
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "dia": "$_id",
+                    "ventas": {"$round": ["$ventas", 2]},
+                    "pedidos": {"$size": "$pedidos"},
+                    "unidades": 1,
+                }
+            },
+            {"$sort": {"dia": 1}},
+        ]
+        rows = await db.orders_final.aggregate(pipeline).to_list(length=None)
+        month_name = AnalyticsService.MONTH_LABELS.get(month, str(month))
+
+        return {
+            "message": f"Distribucion diaria de las ventas en {month_name} de {year}.",
+            "kpis": {
+                "dias_con_ventas": len(rows),
+                "ventas_totales": AnalyticsService.format_money(sum(row["ventas"] for row in rows)),
+                "mejor_dia": max(rows, key=lambda row: row["ventas"])["dia"] if rows else "sin datos",
+            },
+            "table": rows,
+            "chart": {
+                "type": "line",
+                "title": f"Ventas diarias en {month_name} de {year}",
+                "data": [{"name": str(row["dia"]), "value": row["ventas"]} for row in rows],
             },
         }
 
@@ -438,7 +707,7 @@ class AnalyticsService:
             "message": f"Ranking de los {len(rows)} productos con mayor volumen de ventas{title_year}.",
             "kpis": {
                 "productos_mostrados": len(rows),
-                "anio": year or "todos",
+                "año": year or "todos",
                 "top_producto": rows[0]["producto"] if rows else "sin datos",
             },
             "table": rows,
@@ -455,9 +724,18 @@ class AnalyticsService:
         pipeline = [
             *AnalyticsService.build_orders_with_items_pipeline(year),
             {
+                "$group": {
+                    "_id": "$customer_id",
+                    "ventas": {"$sum": "$items.price"},
+                    "envio": {"$sum": "$items.freight_value"},
+                    "pedidos": {"$addToSet": "$order_id"},
+                    "unidades": {"$sum": 1},
+                }
+            },
+            {
                 "$lookup": {
                     "from": "customers",
-                    "localField": "customer_id",
+                    "localField": "_id",
                     "foreignField": "customer_id",
                     "as": "customer",
                 }
@@ -466,10 +744,10 @@ class AnalyticsService:
             {
                 "$group": {
                     "_id": "$customer.customer_state",
-                    "ventas": {"$sum": "$items.price"},
-                    "envio": {"$sum": "$items.freight_value"},
-                    "pedidos": {"$addToSet": "$order_id"},
-                    "unidades": {"$sum": 1},
+                    "ventas": {"$sum": "$ventas"},
+                    "envio": {"$sum": "$envio"},
+                    "pedidos": {"$sum": {"$size": "$pedidos"}},
+                    "unidades": {"$sum": "$unidades"},
                 }
             },
             {"$sort": {"ventas": -1}},
@@ -480,7 +758,7 @@ class AnalyticsService:
                     "estado": "$_id",
                     "ventas": {"$round": ["$ventas", 2]},
                     "envio": {"$round": ["$envio", 2]},
-                    "pedidos": {"$size": "$pedidos"},
+                    "pedidos": 1,
                     "unidades": 1,
                 }
             },
@@ -606,7 +884,7 @@ class AnalyticsService:
             {
                 "$group": {
                     "_id": {
-                        "anio": {"$year": "$order_date_parsed"},
+                        "año": {"$year": "$order_date_parsed"},
                         "order_id": "$order_id",
                     },
                     "importe_pedido": {"$sum": "$items.price"},
@@ -615,7 +893,7 @@ class AnalyticsService:
             },
             {
                 "$group": {
-                    "_id": "$_id.anio",
+                    "_id": "$_id.año",
                     "ticket_medio": {"$avg": "$importe_pedido"},
                     "unidades_medias": {"$avg": "$unidades_pedido"},
                     "pedidos": {"$sum": 1},
@@ -624,27 +902,27 @@ class AnalyticsService:
             {
                 "$project": {
                     "_id": 0,
-                    "anio": "$_id",
+                    "año": "$_id",
                     "ticket_medio": {"$round": ["$ticket_medio", 2]},
                     "unidades_medias": {"$round": ["$unidades_medias", 2]},
                     "pedidos": 1,
                 }
             },
-            {"$sort": {"anio": 1}},
+            {"$sort": {"año": 1}},
         ]
         rows = await db.orders_final.aggregate(pipeline).to_list(length=None)
 
         return {
-            "message": "Evolucion del ticket medio por anio, calculado a partir del importe total de cada pedido.",
+            "message": "Evolucion del ticket medio por año, calculado a partir del importe total de cada pedido.",
             "kpis": {
-                "anios": len(rows),
+                "años": len(rows),
                 "mayor_ticket": AnalyticsService.format_money(max(rows, key=lambda row: row["ticket_medio"])["ticket_medio"]) if rows else "0,00",
             },
             "table": rows,
             "chart": {
                 "type": "line",
-                "title": "Ticket medio por anio",
-                "data": [{"name": str(row["anio"]), "value": row["ticket_medio"]} for row in rows],
+                "title": "Ticket medio por año",
+                "data": [{"name": str(row["año"]), "value": row["ticket_medio"]} for row in rows],
             },
         }
 
@@ -662,27 +940,27 @@ class AnalyticsService:
             {
                 "$project": {
                     "_id": 0,
-                    "anio": "$_id",
+                    "año": "$_id",
                     "pedidos": 1,
                     "clientes": {"$size": "$clientes"},
                 }
             },
-            {"$sort": {"anio": 1}},
+            {"$sort": {"año": 1}},
         ]
         rows = await db.orders_final.aggregate(pipeline).to_list(length=None)
 
         return {
             "message": "Evolucion anual del numero de pedidos registrados en el negocio.",
             "kpis": {
-                "anios": len(rows),
+                "años": len(rows),
                 "pedidos_totales": sum(row["pedidos"] for row in rows),
-                "anio_con_mas_pedidos": max(rows, key=lambda row: row["pedidos"])["anio"] if rows else "sin datos",
+                "año_con_mas_pedidos": max(rows, key=lambda row: row["pedidos"])["año"] if rows else "sin datos",
             },
             "table": rows,
             "chart": {
                 "type": "bar",
-                "title": "Pedidos por anio",
-                "data": [{"name": str(row["anio"]), "value": row["pedidos"]} for row in rows],
+                "title": "Pedidos por año",
+                "data": [{"name": str(row["año"]), "value": row["pedidos"]} for row in rows],
             },
         }
 
@@ -692,35 +970,33 @@ class AnalyticsService:
         pipeline = [
             *AnalyticsService.build_orders_with_items_pipeline(),
             {
+                "$group": {
+                    "_id": "$customer_id",
+                    "ventas": {"$sum": "$items.price"},
+                    "pedidos": {"$addToSet": "$order_id"},
+                }
+            },
+            {
                 "$lookup": {
                     "from": "customers",
-                    "localField": "customer_id",
+                    "localField": "_id",
                     "foreignField": "customer_id",
                     "as": "customer",
                 }
             },
             {"$unwind": "$customer"},
             {
-                "$group": {
-                    "_id": "$customer.customer_unique_id",
-                    "ventas": {"$sum": "$items.price"},
-                    "pedidos": {"$addToSet": "$order_id"},
-                    "estado": {"$first": "$customer.customer_state"},
-                    "ciudad": {"$first": "$customer.customer_city"},
-                }
-            },
-            {"$sort": {"ventas": -1}},
-            {"$limit": limit},
-            {
                 "$project": {
                     "_id": 0,
-                    "cliente": "$_id",
-                    "estado": 1,
-                    "ciudad": 1,
+                    "cliente": "$customer.customer_unique_id",
+                    "estado": "$customer.customer_state",
+                    "ciudad": "$customer.customer_city",
                     "ventas": {"$round": ["$ventas", 2]},
                     "pedidos": {"$size": "$pedidos"},
                 }
             },
+            {"$sort": {"ventas": -1}},
+            {"$limit": limit},
         ]
         rows = await db.orders_final.aggregate(pipeline).to_list(length=limit)
 

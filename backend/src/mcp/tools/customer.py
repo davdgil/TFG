@@ -48,6 +48,16 @@ def register_customer_tools(mcp):
         return await AnalyticsService.random_customer_summary()
 
     @mcp.tool()
+    async def customer_sales_by_month(customer_ref: str, year: int | None = None) -> dict[str, Any]:
+        """Devuelve la evolucion mensual de ventas de un cliente, con filtro opcional por año."""
+        return await AnalyticsService.customer_sales_by_month(customer_ref=customer_ref, year=year)
+
+    @mcp.tool()
+    async def customer_sales_by_day(customer_ref: str, year: int, month: int) -> dict[str, Any]:
+        """Devuelve la evolucion diaria de ventas de un cliente en un mes y año concretos."""
+        return await AnalyticsService.customer_sales_by_day(customer_ref=customer_ref, year=year, month=month)
+
+    @mcp.tool()
     async def get_all_customers(limit: int | None = 20) -> list[dict[str, Any]]:
         """Obtiene una muestra limitada de clientes."""
         safe_limit = AnalyticsService.clean_limit(limit)

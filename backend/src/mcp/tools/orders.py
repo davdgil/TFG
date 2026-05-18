@@ -1,4 +1,4 @@
-from typing import Any
+﻿from typing import Any
 
 from src.config.mongo import db
 from src.services.analytics_service import AnalyticsService
@@ -34,5 +34,6 @@ def register_order_tools(mcp):
 
     @mcp.tool()
     async def count_orders_by_year() -> dict[str, Any]:
-        """Grafico del numero de pedidos por anio."""
+        """Grafico del numero de pedidos por año."""
         return await AnalyticsService.orders_by_year()
+

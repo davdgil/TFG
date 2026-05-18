@@ -2,7 +2,6 @@ from .customer import Customer
 from .order_final import OrderFinal, OrderFinalItem
 from .order_item import OrderItem
 from .product import Product
-from .user import User, UserRole
 
 __all__ = [
 	"Customer",
@@ -10,6 +9,4 @@ __all__ = [
 	"OrderFinalItem",
 	"OrderItem",
 	"Product",
-	"User",
-	"UserRole",
 ]
