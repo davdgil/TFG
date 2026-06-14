@@ -968,14 +968,23 @@ class AnalyticsService:
     async def top_customers(limit: int | None = None) -> dict[str, Any]:
         limit = AnalyticsService.clean_limit(limit)
         pipeline = [
-            *AnalyticsService.build_orders_with_items_pipeline(),
+            AnalyticsService.build_date_stage(),
+            {
+                "$project": {
+                    "_id": 0,
+                    "customer_id": 1,
+                    "order_total": {"$sum": "$items.price"},
+                }
+            },
             {
                 "$group": {
                     "_id": "$customer_id",
-                    "ventas": {"$sum": "$items.price"},
-                    "pedidos": {"$addToSet": "$order_id"},
+                    "ventas": {"$sum": "$order_total"},
+                    "pedidos": {"$sum": 1},
                 }
             },
+            {"$sort": {"ventas": -1}},
+            {"$limit": limit},
             {
                 "$lookup": {
                     "from": "customers",
@@ -992,11 +1001,9 @@ class AnalyticsService:
                     "estado": "$customer.customer_state",
                     "ciudad": "$customer.customer_city",
                     "ventas": {"$round": ["$ventas", 2]},
-                    "pedidos": {"$size": "$pedidos"},
+                    "pedidos": 1,
                 }
             },
-            {"$sort": {"ventas": -1}},
-            {"$limit": limit},
         ]
         rows = await db.orders_final.aggregate(pipeline).to_list(length=limit)
 

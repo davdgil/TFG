@@ -2,6 +2,8 @@ import asyncio
 import json
 import os
 import re
+import sys
+import time
 import unicodedata
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -85,7 +87,7 @@ class MCPClient:
         if is_python:
             Path(server_script_path).resolve()
             server_params = StdioServerParameters(
-                command=r"C:\Users\theivid\Documents\GitHub\TFG\backend\venv\Scripts\python.exe",
+                command=sys.executable,
                 args=["-m", "src.mcp.server"],
                 env=os.environ.copy(),
             )
@@ -189,6 +191,36 @@ class MCPClient:
         if not text:
             return "sin datos"
         return text.replace("_", " ")
+
+    def build_chat_response(
+        self,
+        message: str,
+        meta: dict[str, Any],
+        kpis: dict[str, Any] | None = None,
+        table: list[dict[str, Any]] | None = None,
+        chart: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "message": message,
+            "kpis": kpis or {},
+            "table": table or [],
+            "chart": chart,
+            "meta": meta,
+        }
+
+    def attach_meta(
+        self, payload: str | dict[str, Any], meta: dict[str, Any]
+    ) -> dict[str, Any]:
+        if isinstance(payload, dict):
+            return {
+                "message": payload.get("message", ""),
+                "kpis": payload.get("kpis", {}),
+                "table": payload.get("table", []),
+                "chart": payload.get("chart"),
+                "meta": meta,
+            }
+
+        return self.build_chat_response(message=payload, meta=meta)
 
     def infer_allowed_functions(self, query: str) -> list[str] | None:
         text = self.normalize_text(query)
@@ -540,10 +572,11 @@ class MCPClient:
                 f"La consulta no se pudo completar porque la herramienta {tool_name} ha tardado demasiado."
             ) from exc
 
-    async def process_query(self, query: str) -> str | dict[str, Any]:
+    async def process_query(self, query: str) -> dict[str, Any]:
         if not self.session:
             raise RuntimeError("MCP session is not initialized")
 
+        started_at = time.perf_counter()
         tools_response = await self.session.list_tools()
         gemini_tools = self.build_gemini_tools(tools_response.tools)
         allowed_functions = self.infer_allowed_functions(query)
@@ -573,8 +606,21 @@ class MCPClient:
             )
         ]
         repeated_calls: dict[str, int] = {}
+        selected_tools: list[str] = []
         total_tool_calls = 0
         model_turns = 0
+
+        def finalize(payload: str | dict[str, Any], had_error: bool = False) -> dict[str, Any]:
+            latency_ms = round((time.perf_counter() - started_at) * 1000)
+            meta = {
+                "query_mode": query_mode,
+                "selected_tool": selected_tools[0] if selected_tools else None,
+                "selected_tools": selected_tools,
+                "tool_calls": total_tool_calls,
+                "latency_ms": latency_ms,
+                "had_error": had_error,
+            }
+            return self.attach_meta(payload, meta)
 
         while True:
             model_turns += 1
@@ -596,15 +642,19 @@ class MCPClient:
                 if allowed_functions and len(allowed_functions) == 1:
                     fallback_tool = allowed_functions[0]
                     fallback_args = self.build_fallback_tool_args(fallback_tool, query)
+                    selected_tools.append(fallback_tool)
+                    total_tool_calls += 1
                     result = await self.call_tool_with_timeout(fallback_tool, fallback_args)
                     tool_output = self.tool_content_to_text(result.content)
                     parsed_tool_output = self.parse_json_object(tool_output)
                     if self.is_frontend_result(parsed_tool_output):
                         if query_mode == "dashboard":
-                            return parsed_tool_output
-                        return self.summarize_frontend_result(parsed_tool_output)
+                            return finalize(parsed_tool_output)
+                        return finalize(self.summarize_frontend_result(parsed_tool_output))
                     if parsed_tool_output is not None:
-                        return self.summarize_tool_result(fallback_tool, parsed_tool_output)
+                        return finalize(
+                            self.summarize_tool_result(fallback_tool, parsed_tool_output)
+                        )
                 raise RuntimeError(
                     "La consulta ha tardado demasiado y no se ha podido completar."
                 )
@@ -612,15 +662,19 @@ class MCPClient:
                 if allowed_functions and len(allowed_functions) == 1:
                     fallback_tool = allowed_functions[0]
                     fallback_args = self.build_fallback_tool_args(fallback_tool, query)
+                    selected_tools.append(fallback_tool)
+                    total_tool_calls += 1
                     result = await self.call_tool_with_timeout(fallback_tool, fallback_args)
                     tool_output = self.tool_content_to_text(result.content)
                     parsed_tool_output = self.parse_json_object(tool_output)
                     if self.is_frontend_result(parsed_tool_output):
                         if query_mode == "dashboard":
-                            return parsed_tool_output
-                        return self.summarize_frontend_result(parsed_tool_output)
+                            return finalize(parsed_tool_output)
+                        return finalize(self.summarize_frontend_result(parsed_tool_output))
                     if parsed_tool_output is not None:
-                        return self.summarize_tool_result(fallback_tool, parsed_tool_output)
+                        return finalize(
+                            self.summarize_tool_result(fallback_tool, parsed_tool_output)
+                        )
                 raise
 
             function_calls = response.function_calls or []
@@ -628,8 +682,8 @@ class MCPClient:
                 output_text = (response.text or "").strip()
                 parsed_output = self.parse_json_object(output_text)
                 if self.is_frontend_result(parsed_output):
-                    return parsed_output
-                return output_text
+                    return finalize(parsed_output)
+                return finalize(output_text)
 
             contents.append(response.candidates[0].content)
             function_response_parts: list[types.Part] = []
@@ -643,6 +697,7 @@ class MCPClient:
 
                 tool_name = function_call.name
                 tool_args = function_call.args or {}
+                selected_tools.append(tool_name)
                 result = await self.call_tool_with_timeout(tool_name, tool_args)
                 tool_output = self.tool_content_to_text(result.content)
                 parsed_tool_output = self.parse_json_object(tool_output)
@@ -658,14 +713,18 @@ class MCPClient:
 
                 if self.is_frontend_result(parsed_tool_output):
                     if query_mode == "dashboard":
-                        return parsed_tool_output
-                    return self.summarize_frontend_result(parsed_tool_output)
+                        return finalize(parsed_tool_output)
+                    return finalize(self.summarize_frontend_result(parsed_tool_output))
 
                 if parsed_tool_output is not None and query_mode == "conversation" and allowed_functions and len(allowed_functions) == 1:
-                    return self.summarize_tool_result(tool_name, parsed_tool_output)
+                    return finalize(
+                        self.summarize_tool_result(tool_name, parsed_tool_output)
+                    )
 
                 if parsed_tool_output is not None and repeated_calls[call_signature] >= 2:
-                    return self.summarize_tool_result(tool_name, parsed_tool_output)
+                    return finalize(
+                        self.summarize_tool_result(tool_name, parsed_tool_output)
+                    )
 
                 function_response_parts.append(
                     self.build_function_response_part(tool_name, tool_output)
