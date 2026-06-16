@@ -9,12 +9,11 @@ class Settings(BaseSettings):
     db_name: str
     port: int = 9000
     jwt_secret: str
-    anthropic_api_key: str | None = None
-    openai_api_key: str | None = None
     gemini_api_key: str | None = None
     class Config:
         env_file = ENV_PATH
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 settings = Settings()
