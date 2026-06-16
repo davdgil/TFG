@@ -146,6 +146,10 @@ class MCPClient:
 
     def extract_year(self, text: str) -> int | None:
         match = re.search(r"\b(20\d{2})\b", text)
+        if match:
+            return int(match.group(1))
+
+        match = re.search(r"\b(20\d{2})(?=[a-f0-9]{8,}\b)", text)
         return int(match.group(1)) if match else None
 
     def extract_limit(self, text: str) -> int | None:
@@ -181,7 +185,26 @@ class MCPClient:
 
     def extract_hex_identifier(self, text: str) -> str | None:
         match = re.search(r"\b[a-f0-9]{32}\b", text)
-        return match.group(0) if match else None
+        if match:
+            return match.group(0)
+
+        tokens = re.findall(r"\b[a-f0-9]{8,}\b", text)
+        fragments: list[str] = []
+        for token in tokens:
+            if re.fullmatch(r"20\d{2}[a-f0-9]{8,}", token):
+                fragments.append(token[4:])
+            fragments.append(token)
+
+        for start in range(len(fragments)):
+            candidate = ""
+            for fragment in fragments[start:]:
+                candidate += fragment
+                if len(candidate) == 32:
+                    return candidate
+                if len(candidate) > 32:
+                    break
+
+        return None
 
     def extract_product_id(self, text: str) -> str | None:
         return self.extract_hex_identifier(text)

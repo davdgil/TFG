@@ -722,14 +722,25 @@ class AnalyticsService:
     async def sales_by_state(year: int | None = None, limit: int | None = None) -> dict[str, Any]:
         limit = AnalyticsService.clean_limit(limit)
         pipeline = [
-            *AnalyticsService.build_orders_with_items_pipeline(year),
+            AnalyticsService.build_date_stage(),
+            *AnalyticsService.build_year_filter_stage(year),
+            {
+                "$project": {
+                    "_id": 0,
+                    "customer_id": 1,
+                    "order_id": 1,
+                    "ventas": {"$sum": "$items.price"},
+                    "envio": {"$sum": "$items.freight_value"},
+                    "unidades": {"$size": "$items"},
+                }
+            },
             {
                 "$group": {
                     "_id": "$customer_id",
-                    "ventas": {"$sum": "$items.price"},
-                    "envio": {"$sum": "$items.freight_value"},
-                    "pedidos": {"$addToSet": "$order_id"},
-                    "unidades": {"$sum": 1},
+                    "ventas": {"$sum": "$ventas"},
+                    "envio": {"$sum": "$envio"},
+                    "pedidos": {"$sum": 1},
+                    "unidades": {"$sum": "$unidades"},
                 }
             },
             {
@@ -746,7 +757,7 @@ class AnalyticsService:
                     "_id": "$customer.customer_state",
                     "ventas": {"$sum": "$ventas"},
                     "envio": {"$sum": "$envio"},
-                    "pedidos": {"$sum": {"$size": "$pedidos"}},
+                    "pedidos": {"$sum": "$pedidos"},
                     "unidades": {"$sum": "$unidades"},
                 }
             },
@@ -785,11 +796,29 @@ class AnalyticsService:
     async def sales_by_city(year: int | None = None, limit: int | None = None) -> dict[str, Any]:
         limit = AnalyticsService.clean_limit(limit)
         pipeline = [
-            *AnalyticsService.build_orders_with_items_pipeline(year),
+            AnalyticsService.build_date_stage(),
+            *AnalyticsService.build_year_filter_stage(year),
+            {
+                "$project": {
+                    "_id": 0,
+                    "customer_id": 1,
+                    "order_id": 1,
+                    "ventas": {"$sum": "$items.price"},
+                    "unidades": {"$size": "$items"},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$customer_id",
+                    "ventas": {"$sum": "$ventas"},
+                    "pedidos": {"$sum": 1},
+                    "unidades": {"$sum": "$unidades"},
+                }
+            },
             {
                 "$lookup": {
                     "from": "customers",
-                    "localField": "customer_id",
+                    "localField": "_id",
                     "foreignField": "customer_id",
                     "as": "customer",
                 }
@@ -801,9 +830,9 @@ class AnalyticsService:
                         "ciudad": "$customer.customer_city",
                         "estado": "$customer.customer_state",
                     },
-                    "ventas": {"$sum": "$items.price"},
-                    "pedidos": {"$addToSet": "$order_id"},
-                    "unidades": {"$sum": 1},
+                    "ventas": {"$sum": "$ventas"},
+                    "pedidos": {"$sum": "$pedidos"},
+                    "unidades": {"$sum": "$unidades"},
                 }
             },
             {"$sort": {"ventas": -1}},
@@ -814,7 +843,7 @@ class AnalyticsService:
                     "ciudad": "$_id.ciudad",
                     "estado": "$_id.estado",
                     "ventas": {"$round": ["$ventas", 2]},
-                    "pedidos": {"$size": "$pedidos"},
+                    "pedidos": 1,
                     "unidades": 1,
                 }
             },
